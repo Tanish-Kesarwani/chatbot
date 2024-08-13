@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assisted Chatbot</title>
+    <style>
+        body {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #chatbot-container {
+            background-color: #34495e;
+            padding: 20px;
+            border-radius: 10px;
+            width: 400px;
+        }
+        #chat-output {
+            height: 200px;
+            overflow-y: auto;
+            background-color: #1abc9c;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        #chat-input {
+            display: flex;
+            align-items: center;
+        }
+        #text-input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            margin-right: 10px;
+        }
+        #speak-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="chatbot-container">
+    <div id="chat-output"></div>
+    <div id="chat-input">
+        <input type="text" id="text-input" placeholder="Ask something...">
+        <button id="speak-btn">🎤</button>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<script>
+    // Elements from the DOM
+    const chatOutput = document.getElementById("chat-output");
+    const textInput = document.getElementById("text-input");
+    const speakBtn = document.getElementById("speak-btn");
+    let learningMode = false;
+    let lastUserInput = "";
+
+    // Function to update the chat display with user and bot messages
+    function updateChat(text) {
+        chatOutput.innerHTML += `<p>${text}</p>`;
+        chatOutput.scrollTop = chatOutput.scrollHeight; // Auto scroll to bottom
+    }
+
+    // Function to convert text to speech
+    function speakText(text) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // Function to send user input to the Flask backend and get the response
+    function getResponse(query) {
+        $.ajax({
+            url: '/get_response',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ "query": query }),
+            success: function(response) {
+                if (response.learning) {
+                    learningMode = true;
+                    lastUserInput = query;
+                    updateChat("Bot: " + response.response);
+                    speakText(response.response);
+                } else {
+                    learningMode = false;
+                    updateChat("Bot: " + response.response);
+                    speakText(response.response);
+                }
+            }
+        });
+    }
+
+    // Function to send the new response to the Flask backend for learning
+    function teachBot(newResponse) {
+        $.ajax({
+            url: '/learn_response',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ "query": lastUserInput, "response": newResponse }),
+            success: function(response) {
+                if (response.status === "learned") {
+                    const reply = "Thank you! I have learned something new.";
+                    updateChat("Bot: " + reply);
+                    speakText(reply);
+                }
+                learningMode = false;
+            }
+        });
+    }
+
+    // Function to start speech recognition
+    function startSpeechRecognition() {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'en-US';
+        recognition.start();
+
+        recognition.onresult = function(event) {
+            const userInput = event.results[0][0].transcript; // Get the spoken text
+            updateChat("You: " + userInput);
+
+            if (learningMode) {
+                teachBot(userInput); // Teach the bot with the new response
+            } else {
+                getResponse(userInput); // Get response from the backend
+            }
+        };
+
+        recognition.onerror = function(event) {
+            updateChat("Error: " + event.error);
+        };
+    }
+
+    // Event listener for the microphone button click
+    speakBtn.addEventListener("click", startSpeechRecognition);
+
+    // Event listener for handling Enter key press in the text input field
+    textInput.addEventListener("keypress", function(e) {
+        if (e.key === "Enter") {
+            const userInput = textInput.value;
+            updateChat("You: " + userInput);
+
+            if (learningMode) {
+                teachBot(userInput); // Teach the bot with the new response
+            } else {
+                getResponse(userInput); // Get response from the backend
+            }
+
+            textInput.value = ''; // Clear the input field
+        }
+    });
+</script>
+
+</body>
+</html>
